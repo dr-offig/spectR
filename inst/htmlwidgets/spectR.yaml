@@ -1,0 +1,9 @@
+dependencies:
+ - name: webgl-examples
+   version: 1.0.0
+   src: htmlwidgets/lib/webgl-examples
+   script: gl-matrix.js
+ - name: FileSaver
+   version: 2.0.0
+   src: htmlwidgets/lib/FileSaver
+   script: FileSaver.min.js
