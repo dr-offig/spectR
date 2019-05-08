@@ -5,19 +5,29 @@
 #' @import htmlwidgets
 #'
 #' @export
-spectR <- function(audioName, mainDir, audioFile, spectrogramFile, audioMarkers = NULL, width = NULL, height = NULL, elementId = NULL) {
-
-  # create audiorecord
-  #ar <- audiorecord$new(filenames=list(audioURL))
+spectR <- function(mediaURL, mediaName, mediaHasVideo,
+                   spectrogramDir, spectrogramBaseName, spectrogramHeight,
+                   mediaMarkers=NULL, width = NULL, height = NULL, elementId = NULL)
+{
+  spectrogramStoryboardPath <- paste0(spectrogramDir,"/", spectrogramBaseName, "_storyboard.csv")
+  storyboard <- read.csv(spectrogramStoryboardPath, header = TRUE, stringsAsFactors = FALSE )
+  str(storyboard)
 
   # forward options using x
   x = list(
-    audioName = audioName,
-    mainDir = mainDir,
-    audioFile = audioFile,
-    spectrogramFile = spectrogramFile,
-    audioMarkers = audioMarkers
+    mediaURL = mediaURL,
+    mediaName = mediaName,
+    mediaHasVideo = mediaHasVideo,
+    spectrogramDir = spectrogramDir,
+    spectrogramBaseName = spectrogramBaseName,
+    spectrogramHeight = spectrogramHeight,
+    storyboard = storyboard,
+    mediaMarkers = mediaMarkers
   )
+
+  # put in some meta tags
+  #deps <- list(htmltools::htmlDependency(name="responsive",version=1,src="/",
+  #                                    head="<meta name='viewport' content='width=device-width, initial-scale=1.0'>"))
 
   # create widget
   htmlwidgets::createWidget(
@@ -47,13 +57,13 @@ spectR <- function(audioName, mainDir, audioFile, spectrogramFile, audioMarkers 
 #' @name spectR-shiny
 #'
 #' @export
-spectROutput <- function(outputId, width = '100%', height = '575px'){
+spectROutput <- function(outputId, width = '100%', height = 'auto'){
   htmlwidgets::shinyWidgetOutput(outputId, 'spectR', width, height, package = 'spectR')
 }
 
 #' @rdname spectR-shiny
 #' @export
-renderSpectR <- function(expr, env = parent.frame(), quoted = FALSE) {
+renderspectR <- function(expr, env = parent.frame(), quoted = FALSE) {
   if (!quoted) { expr <- substitute(expr) } # force quoted
   htmlwidgets::shinyRenderWidget(expr, spectROutput, env, quoted = TRUE)
 }
