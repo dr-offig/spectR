@@ -935,6 +935,7 @@ HTMLWidgets.widget({
         const spectrogramFrames = setupSpectrogram(x.spectrogramDir, x.spectrogramBaseName, x.storyboard);
         spectrogramFrames.forEach(function(img) {
                                     img.style.display = 'none';
+                                    img.crossOrigin = 'anonymous'
       	                            spectrogramCanvas.appendChild(img);
         });
 
