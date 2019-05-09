@@ -141,6 +141,8 @@ HTMLWidgets.widget({
     var mediaPlayhead = 0.0;
     var spectGain = 1.0;
     var spectContrast = 1.0;
+    var spectGamma = 1.0;
+    var spectVerticalScale = 1.0;
 
     resetZoomAndPan = function(dur) {
 	    old_poi = poi;
@@ -248,20 +250,20 @@ HTMLWidgets.widget({
 
       // Now create an array of positions for the three squares.
       const positions = [
-        -2.0, -1.0,
-         0.0, -1.0,
-         0.0,  1.0,
-        -2.0,  1.0,
+        -3.0, -1.0,
+        -1.0, -1.0,
+        -1.0,  1.0,
+        -3.0,  1.0,
 
         -1.0, -1.0,
          1.0, -1.0,
          1.0,  1.0,
         -1.0,  1.0,
 
-         0.0, -1.0,
-         2.0, -1.0,
-         2.0,  1.0,
-         0.0,  1.0,
+         1.0, -1.0,
+         3.0, -1.0,
+         3.0,  1.0,
+         1.0,  1.0,
       ];
 
       // Now pass the list of positions into WebGL to build the
@@ -515,7 +517,7 @@ HTMLWidgets.widget({
     function drawSpectrogramCanvas( gl, programInfo, buffers,
                                     prevFrameTexture, currFrameTexture, nextFrameTexture,
                                     deltaTime, playhead,
-                                    gain, contrast )
+                                    gain, contrast, gamma, verticalScale)
     {
       gl.clearColor(0.0, 0.0, 0.0, 1.0);  // Clear to black, fully opaque
       gl.clearDepth(1.0);                 // Clear everything
@@ -620,6 +622,8 @@ HTMLWidgets.widget({
       gl.uniform1f(programInfo.uniformLocations.gain, gain);
       gl.uniform1f(programInfo.uniformLocations.contrast, contrast);
       gl.uniform1f(programInfo.uniformLocations.viewportWidth, gl.drawingBufferWidth);
+      gl.uniform1f(programInfo.uniformLocations.gamma, gamma);
+      gl.uniform1f(programInfo.uniformLocations.verticalScale, verticalScale);
 
       // Specify the texture to map onto the canvas.
       // We will slot the prevFrameTexture into texture unit 0
@@ -1021,8 +1025,8 @@ HTMLWidgets.widget({
         };
 
 
-        function fractionThroughSpectrogramFrame(t, storyboard) {
-          idx = spectrogramFrameContainingTime(t, storyboard);
+        function fractionThroughSpectrogramFrame(t, idx, storyboard) {
+          //idx = spectrogramFrameContainingTime(t, storyboard);
 
           if (idx < 0)
             return(0.0);
@@ -1034,6 +1038,11 @@ HTMLWidgets.widget({
           return ((t - storyboard.start[idx]) / frameDur);
         };
 
+        //function spectrogramFramePlayheadNDC(t, idx, storyboard) {
+        //  frac = fractionThroughSpectrogramFrame(t, idx, storyboard);
+        //  return(2.0*(frac-0.5));
+        //};
+
 
         function fractionThroughMediaFile(t, dur) {
           if (dur === null || dur === 0.0)
@@ -1041,6 +1050,12 @@ HTMLWidgets.widget({
           else
             return(t/dur)
         };
+
+        //function mediaPlayheadNDC(t, dur) {
+        //  frac = fractionThroughMediaFile(t, dur);
+        //  return(2.0*(frac-0.5));
+        //};
+
 
       	// Event handling
       	mousedownMediaCanvas = function(evt) {
@@ -1118,7 +1133,7 @@ HTMLWidgets.widget({
         wheelSpectrogramCanvas = function(evt) {
       		evt.preventDefault();
       		//poi = getMouseNDC(mediaCanvas,evt);
-      		  spectContrast *= (1 + Math.max(-0.5,Math.min(0.5, (evt.deltaY / 250))));
+      		  spectGamma *= (1 + Math.max(-0.5,Math.min(0.5, (evt.deltaY / 250))));
 
       	};
 
@@ -1149,6 +1164,7 @@ HTMLWidgets.widget({
       	mediaCanvas.addEventListener('mousemove', mousemoveMediaCanvas);
 
         spectrogramCanvas.addEventListener('wheel', wheelSpectrogramCanvas);
+        spectrogramCanvas.addEventListener('keydown', keydownEitherCanvas);
 
         scrubberCanvas.addEventListener('keydown', keydownEitherCanvas);
       	scrubberCanvas.addEventListener('mousedown', mousedownScrubberCanvas);
@@ -1227,44 +1243,47 @@ HTMLWidgets.widget({
       		uniform sampler2D uPrevFrame;
       		uniform sampler2D uCurrFrame;
       		uniform sampler2D uNextFrame;
-          uniform lowp float uPlayhead;
-          uniform lowp float uGain;
-          uniform lowp float uContrast;
-          uniform lowp float uViewportWidth;
+          uniform highp float uPlayhead;
+          uniform highp float uGain;
+          uniform highp float uContrast;
+          uniform highp float uViewportWidth;
+          uniform highp float uGamma;
+          uniform highp float uVerticalScale;
 
       		void main() {
 
-            highp vec2 vRelativeTextureCoord = vTextureCoord;
-            highp vec4 texelColor = texture2D(uCurrFrame,vTextureCoord);
+            highp vec2 vRelativeTextureCoord; // = vTextureCoord;
+            highp float scaledTextureHeight = pow(vTextureCoord.y, uGamma) * uVerticalScale;
+            highp vec4 texelColor; // = texture2D(uCurrFrame,vTextureCoord);
 
-      		  if (vTextureCoord.x < 0.0)  {
-      		    vRelativeTextureCoord = vec2(vTextureCoord.x + 1.0, vTextureCoord.y);
+            if (scaledTextureHeight > 1.0) {
+              texelColor = vec4(0.0, 0.0, 0.0, 1.0);
+            } else if (vTextureCoord.x < 0.0)  {
+      		    vRelativeTextureCoord = vec2(vTextureCoord.x + 1.0, scaledTextureHeight);
       		    texelColor = texture2D(uPrevFrame, vRelativeTextureCoord);
       		  } else if (vTextureCoord.x > 1.0) {
-      		    vRelativeTextureCoord = vec2(vTextureCoord.x - 1.0, vTextureCoord.y);
+      		    vRelativeTextureCoord = vec2(vTextureCoord.x - 1.0, scaledTextureHeight);
       		    texelColor = texture2D(uNextFrame, vRelativeTextureCoord);
+      		  } else {
+      		    vRelativeTextureCoord = vec2(vTextureCoord.x, scaledTextureHeight);
+      		    texelColor = texture2D(uCurrFrame, vRelativeTextureCoord);
+
       		  }
 
+            //if (mod(vTextureCoord.x, 1.0) < 0.01) {
+            //  texelColor = vec4(1.0, texelColor.gb, 1.0);
+            //}
 
-            lowp vec4 vecContrast =  vec4(uContrast,uContrast,uContrast,1.0);
+            highp vec4 vecContrast =  vec4(uContrast,uContrast,uContrast,1.0);
             texelColor = pow(texelColor, vecContrast);
             texelColor = clamp(texelColor * uGain, 0.0, 1.0);
 
-            if (abs(gl_FragCoord.x - uViewportWidth * uPlayhead) < 5.0) {
+            if (abs(gl_FragCoord.x - uViewportWidth * 0.5) < 10.0) {
               gl_FragColor = vec4(1.0 - texelColor.r, 1.0 - texelColor.g, 1.0 - texelColor.b, 1.0);
-              //gl_FragColor = vec4(1.0, 1.0, 1.0, 1.0);
             } else {
-      			  if (vTextureCoord.x < 0.0)  {
-      			    gl_FragColor = vec4(0.0, 0.0, texelColor.b, 1.0);
-      			  } else if (vTextureCoord.x > 1.0) {
-      			    gl_FragColor = vec4(texelColor.r, 0.0, 0.0, 1.0);
-      			  } else {
-      			    gl_FragColor = vec4(texelColor.rgb,1.0);
-      			  }
+    			    gl_FragColor = vec4(texelColor.rgb,1.0);
             }
 
-            //gl_FragColor = vec4(texelColor.rg, 0.0, 1.0);
-            //gl_FragColor = uniformsColor;
           }
         `;
 
@@ -1304,11 +1323,13 @@ HTMLWidgets.widget({
             modelViewMatrix: spectrogram_gl.getUniformLocation(spectrogram_shaderProgram, 'uModelViewMatrix'),
       			prevFrame: spectrogram_gl.getUniformLocation(spectrogram_shaderProgram, 'uPrevFrame'),
       			currFrame: spectrogram_gl.getUniformLocation(spectrogram_shaderProgram, 'uCurrFrame'),
-      			nextFrame: spectrogram_gl.getUniformLocation(spectrogram_shaderProgram, 'uCurrFrame'),
+      			nextFrame: spectrogram_gl.getUniformLocation(spectrogram_shaderProgram, 'uNextFrame'),
       			playhead: spectrogram_gl.getUniformLocation(spectrogram_shaderProgram, 'uPlayhead'),
       			gain: spectrogram_gl.getUniformLocation(spectrogram_shaderProgram, 'uGain'),
       			contrast: spectrogram_gl.getUniformLocation(spectrogram_shaderProgram, 'uContrast'),
       			viewportWidth: spectrogram_gl.getUniformLocation(spectrogram_shaderProgram, 'uViewportWidth'),
+      			gamma: spectrogram_gl.getUniformLocation(spectrogram_shaderProgram, 'uGamma'),
+      			verticalScale: spectrogram_gl.getUniformLocation(spectrogram_shaderProgram, 'uVerticalScale'),
           },
         };
 
@@ -1363,14 +1384,15 @@ HTMLWidgets.widget({
           }
 
           mediaPlayhead =  fractionThroughMediaFile(media.currentTime, media.duration);
-          //spectTrans = -1.0 * (fractionThroughSpectrogramFrame(media.currentTime, x.storyboard) - mediaPlayhead);
-          spectTrans = 0.5 - fractionThroughSpectrogramFrame(media.currentTime, x.storyboard);
+          spectTrans = -2.0 * (fractionThroughSpectrogramFrame(media.currentTime, spfid, x.storyboard) - 0.5);
+          //spectTrans = 2.0 * (mediaPlayhead - 0.5) - 2.0 * (fractionThroughSpectrogramFrame(media.currentTime, spfid, x.storyboard) - 0.5);
+
       		// draw the scene
           drawMediaCanvas(media_gl, media_programInfo, media_buffers, media_currFrameTexture, media_prevFrameTexture, deltaTime);
           drawSpectrogramCanvas(spectrogram_gl, spectrogram_programInfo, spectrogram_buffers,
                                 spectrogram_prevFrameTexture, spectrogram_currFrameTexture, spectrogram_nextFrameTexture,
                                 deltaTime,  mediaPlayhead,
-                                spectGain, spectContrast);
+                                spectGain, spectContrast, spectGamma, spectVerticalScale);
           drawScrubberCanvas( scrubberCanvas, scrubberContext, mediaMarkers, media.currentTime, media.duration,
                         hoveringOverScrubber, hoverPoint, (!copyMedia) || media.seeking, media.muted);
 
