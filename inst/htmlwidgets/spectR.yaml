@@ -1,9 +1,9 @@
 dependencies:
- - name: webgl-examples
+ - name: spectRwebgl
    version: 1.0.0
-   src: htmlwidgets/lib/webgl-examples
+   src: htmlwidgets/lib/spectRwebgl
    script: gl-matrix.js
-   stylesheet: extra-styles.css
+   stylesheet: spectRwebgl.css
  - name: FileSaver
    version: 2.0.0
    src: htmlwidgets/lib/FileSaver
