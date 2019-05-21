@@ -8,5 +8,10 @@ dependencies:
    version: 2.0.0
    src: htmlwidgets/lib/FileSaver
    script: FileSaver.min.js
+ - name: CBuffer
+   version: 2.0.0
+   src: htmlwidgets/lib/cbuffer
+   script: cbuffer.js
+
 
 

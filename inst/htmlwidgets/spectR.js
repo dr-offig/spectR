@@ -136,13 +136,27 @@ HTMLWidgets.widget({
     var defaultColour = "indianred";
     var definingRegion = false;
     var definingRegionStartTime = null;
-    var currSpectrogramFrameID = -1;
+    var currSpectrogramFrameID = 1;
     var spectTrans = 0.0;
     var mediaPlayhead = 0.0;
     var spectGain = 1.0;
     var spectContrast = 1.0;
     var spectGamma = 1.0;
     var spectVerticalScale = 1.0;
+    var spectHorizontalScale = 1.0;
+    const spectImgRingSize = 5;
+    var spectImgRing = new CBuffer(spectImgRingSize);
+    var spectrogram_prevFrameTexture;
+    var spectrogram_currFrameTexture;
+    var spectrogram_nextFrameTexture;
+    var spectPlayheadPosition = 0.0;
+    //const clock = new Date();
+    //const lastTextureUpdateRequest = [clock.getTime(), clock.getTime(), clock.getTime()]; // new Array(spectImgRingSize);
+    //lastTextureUpdateRequest.fill(clock.getTime());
+
+    // spectImgRing is a ring buffer of objects, each object is
+    //{ image:HTMLImageElement, texture:glTexture, lastRequestTime:time }
+
 
     resetZoomAndPan = function(dur) {
 	    old_poi = poi;
@@ -250,20 +264,20 @@ HTMLWidgets.widget({
 
       // Now create an array of positions for the three squares.
       const positions = [
-        -3.0, -1.0,
-        -1.0, -1.0,
-        -1.0,  1.0,
-        -3.0,  1.0,
+        -2.0, -1.0,
+         0.0, -1.0,
+         0.0,  1.0,
+        -2.0,  1.0,
 
-        -1.0, -1.0,
-         1.0, -1.0,
-         1.0,  1.0,
-        -1.0,  1.0,
+         0.0, -1.0,
+         2.0, -1.0,
+         2.0,  1.0,
+         0.0,  1.0,
 
-         1.0, -1.0,
-         3.0, -1.0,
-         3.0,  1.0,
-         1.0,  1.0,
+         2.0, -1.0,
+         4.0, -1.0,
+         4.0,  1.0,
+         2.0,  1.0,
       ];
 
       // Now pass the list of positions into WebGL to build the
@@ -845,6 +859,15 @@ HTMLWidgets.widget({
         scrubberCanvas.style.width = '100%';
         scrubberCanvas.style.height = 'auto';
 
+      	// opengl stuff
+      	const media_buffers = initMediaCanvasBuffers(media_gl);
+        const media_currFrameTexture = initTexture(media_gl);
+      	const media_prevFrameTexture = initTexture(media_gl);
+      	zeroTexture(media_gl, media_prevFrameTexture);
+
+        const spectrogram_buffers = initSpectrogramCanvasBuffers(spectrogram_gl);
+
+
       	// The media file
       	const media = setupMedia(x.mediaURL, x.mediaName);
         media.style.display = 'none';
@@ -931,17 +954,48 @@ HTMLWidgets.widget({
       	}
 
 
-        // The spectogram images
-        const spectrogramFrames = setupSpectrogram(x.spectrogramDir, x.spectrogramBaseName, x.storyboard);
-        spectrogramFrames.forEach(function(img) {
-                                    img.style.display = 'none';
-                                    img.crossOrigin = 'anonymous'
-      	                            spectrogramCanvas.appendChild(img);
-        });
+        // The spectrogram images
+        setupSpectrogram(spectrogram_gl, x.spectrogramDir, x.spectrogramBaseName, x.storyboard);
+
+        function getSpectrogramImageSrc(id, specDir, storyboard) {
+          const blankFrameFile = x.spectrogramBaseName + "_blank.gif"
+          if (1 <= id && id <= storyboard.image.length) return specDir + "/" + storyboard.image[id-1];
+          else return specDir + "/" + blankFrameFile;
+        }
 
 
+        function setupSpectrogram(gl, specDir, name, storyboard) {
+          for (let i = 0; i < spectImgRingSize; i++) {
+            const img = new Image();
+            img.style.display = 'none';
+            img.crossOrigin = 'anonymous';
+            "decode" in img ? img.decoding = 'async' : img.decoding = 'sync';
+            //img.decoding = 'async';
+            img.importance = 'high';
+            let texture = initTexture(gl);
+            const requestTime = Date.now();
+            img.src = getSpectrogramImageSrc(i, specDir, storyboard);
+            let spectObj = { "image": img, "texture": texture, "requestTime": requestTime, "buildIndex": i, "frameID": i }
+            if ("decode" in img) {
+              img.decode()
+              .then(() => {
+                spectrogramCanvas.appendChild(img);
+                updateSpectrogramTexture(gl,spectObj);
+              })
+              .catch((encodingError) => { console.log(encodingError); })
+            } else {
+              spectrogramCanvas.appendChild(img);
+              img.onload = function()
+              {
+                updateSpectrogramTexture(gl,spectObj);
+                let delay = Date.now() - spectObj.requestTime;
+                console.log("loaded texture " + spectObj.buildIndex + " to " + spectObj.image.src + " " + delay.toString() + " ms after request");
+              };
+            }
+            spectImgRing.push(spectObj);
+          }
 
-        function setupSpectrogram(specDir, name, storyboard) {
+          /*
           const prevSpectrogramImage = document.createElement('img');
           const currSpectrogramImage = document.createElement('img');
           const nextSpectrogramImage = document.createElement('img');
@@ -953,65 +1007,204 @@ HTMLWidgets.widget({
           prevSpectrogramImage.src = specDir + "/" + blankFrameFile;
           currSpectrogramImage.src = specDir + "/" + storyboard.image[0];
           nextSpectrogramImage.src = specDir + "/" + storyboard.image[1];
+          */
 
-          return([prevSpectrogramImage, currSpectrogramImage, nextSpectrogramImage])
+          //return([prevSpectrogramImage, currSpectrogramImage, nextSpectrogramImage])
         }
 
 
-        function updateSpectrogramTextures(gl, prevTexture, currTexture, nextTexture, frameID, storyboard, specDir) {
-          const prevSpectrogramImage = spectrogramFrames[0];
-          const currSpectrogramImage = spectrogramFrames[1];
-          const nextSpectrogramImage = spectrogramFrames[2];
+        function updateSpectrogramTexture(gl, spectObj) {
+          // if there has been a later request on this img element,
+          // the requested time will differ and so there will be
+          // no match
+          //const fresh = spectImgRing.indexOf(spectObj);
+          //if (fresh < 0)
+          //  return false;
 
-          const blankFrameFile = x.spectrogramBaseName + "_blank.gif"
-          if (storyboard.image.length == 1) {
-            prevSpectrogramImage.src = specDir + "/" + blankFrameFile;
-            currSpectrogramImage.src = specDir + "/" + storyboard.image[0];
-            nextSpectrogramImage.src = specDir + "/" + blankFrameFile;
-          } else if (storyboard.image.length == 2) {
-            if (frameID == 0) {
-              prevSpectrogramImage.src = specDir + "/" + blankFrameFile;
-              currSpectrogramImage.src = specDir + "/" + storyboard.image[0];
-              nextSpectrogramImage.src = specDir + "/" + storyboard.image[1];
-            } else {
-              prevSpectrogramImage.src = specDir + "/" + storyboard.image[0];
-              currSpectrogramImage.src = specDir + "/" + storyboard.image[1];
-              nextSpectrogramImage.src = specDir + "/" + blankFrameFile;
-            }
+          updateTextureFromImage(gl, spectObj.texture, spectObj.image);
+          return true;
+        }
 
-          } else if (0 < frameID && frameID < storyboard.image.length-1) {
-            prevSpectrogramImage.src = specDir + "/" + storyboard.image[frameID-1];
-            currSpectrogramImage.src = specDir + "/" + storyboard.image[frameID];
-            nextSpectrogramImage.src = specDir + "/" + storyboard.image[frameID+1];
-          } else if (frameID == 0) {
-            prevSpectrogramImage.src = specDir + "/" + blankFrameFile;
-            currSpectrogramImage.src = specDir + "/" + storyboard.image[0];
-            nextSpectrogramImage.src = specDir + "/" + storyboard.image[1];
-          } else if (frameID == -1) {
-            prevSpectrogramImage.src = specDir + "/" + blankFrameFile;
-            currSpectrogramImage.src = specDir + "/" + blankFrameFile;
-            nextSpectrogramImage.src = specDir + "/" + storyboard.image[0];
-          } else if (frameID == storyboard.image.length-1) {
-            prevSpectrogramImage.src = specDir + "/" + storyboard.image[frameID-1];
-            currSpectrogramImage.src = specDir + "/" + storyboard.image[frameID];
-            nextSpectrogramImage.src = specDir + "/" + blankFrameFile;
-          } else if (frameID == storyboard.image.length) {
-            prevSpectrogramImage.src = specDir + "/" + storyboard.image[frameID-1];
-            currSpectrogramImage.src = specDir + "/" + blankFrameFile;
-            nextSpectrogramImage.src = specDir + "/" + blankFrameFile;
+
+        function advanceOneSpectrogramFrame(gl,inCurrentFrameID, specDir, storyboard) {
+
+          // shift the first frame out (this is the frame previous to the current frame)
+          let spectObj = spectImgRing.shift();
+          if ("decode" in spectObj.image && spectObj.image.parentNode)
+            spectObj.image.parentNode.removeChild(spectObj.image);
+
+          // reuse it to hold the new last frame in the pipeline
+          const requestTime = Date.now();
+          const id = inCurrentFrameID + (spectImgRingSize-1)
+          spectObj.image.src = getSpectrogramImageSrc(id, specDir, storyboard);
+          spectObj.frameID = id;
+          spectObj.requestTime = requestTime;
+          if ("decode" in spectObj.image) {
+            spectObj.image.decode()
+            .then(() => {
+              spectrogramCanvas.appendChild(spectObj.image);
+              updateSpectrogramTexture(spectrogram_gl, spectObj);
+            })
+            .catch((encodingError) => { console.log(encodingError); })
           } else {
-            prevSpectrogramImage.src = specDir + "/" + blankFrameFile;
-            currSpectrogramImage.src = specDir + "/" + blankFrameFile;
-            nextSpectrogramImage.src = specDir + "/" + blankFrameFile;
+            spectObj.image.onload = function()
+            { updateSpectrogramTexture(spectrogram_gl, spectObj);
+              let delay = Date.now() - spectObj.requestTime;
+              console.log("left shifted texture " + spectObj.buildIndex + " to frame ID: " +
+                            spectObj.frameID + " with image file " + spectObj.image.src + " " +
+                            delay.toString() + " ms after request");
+            }
           }
 
-          updateTextureFromImage(gl, prevTexture, prevSpectrogramImage);
-          updateTextureFromImage(gl, currTexture, currSpectrogramImage);
-          updateTextureFromImage(gl, nextTexture, nextSpectrogramImage);
+          // and push it to the end of the queue.
+          spectImgRing.push(spectObj);
+
         }
 
 
-        function spectrogramFrameContainingTime(t, storyboard) {
+        function retreatOneSpectrogramFrame(gl,inCurrentFrameID, specDir, storyboard) {
+
+          // pop the last frame out of the queue
+          let spectObj = spectImgRing.pop();
+          if ("decode" in spectObj.image && spectObj.image.parentNode)
+            spectObj.image.parentNode.removeChild(spectObj.image);
+
+          // reuse it to hold the new first frame in the pipeline
+          const requestTime = Date.now();
+          const id = inCurrentFrameID - 2;
+          spectObj.image.src = getSpectrogramImageSrc(id, specDir, storyboard);
+          spectObj.frameID = id;
+          spectObj.requestTime = requestTime;
+          if ("decode" in spectObj.image) {
+            spectObj.image.decode()
+            .then(() => {
+              spectrogramCanvas.appendChild(spectObj.image);
+              updateSpectrogramTexture(spectrogram_gl, spectObj);
+            })
+            .catch((encodingError) => { console.log(encodingError); })
+          } else {
+            spectObj.image.onload = function()
+            {
+              updateSpectrogramTexture(spectrogram_gl, spectObj);
+              let delay = Date.now() - spectObj.requestTime;
+              console.log("right shifted texture " + spectObj.buildIndex +
+                          " to frame ID: " + spectObj.frameID +
+                          " with image file " + spectObj.image.src +
+                          " " + delay.toString() + " ms after request");
+            };
+          }
+
+          // and shift it into the start of the queue.
+          spectImgRing.unshift(spectObj);
+
+        }
+
+
+        function reloadSpectrogramFrames(gl, targetCurrentFrameID, specDir, storyboard) {
+          // there's nothing to be gained from existing cached images, so just refresh all.
+          for (let i = 0; i < spectImgRingSize; i++) {
+            let spectObj = spectImgRing.shift();
+            if ("decode" in spectObj.image && spectObj.image.parentNode)
+              spectObj.image.parentNode.removeChild(spectObj.image);
+
+            const requestTime = Date.now();
+            spectObj.requestTime = requestTime;
+            let id = targetCurrentFrameID + (i-1)
+            spectObj.image.src = getSpectrogramImageSrc(id, specDir, storyboard)
+            spectObj.frameID = id;
+            if ("decode" in spectObj.image) {
+              spectObj.image.decode()
+              .then(() => {
+                spectrogramCanvas.appendChild(spectObj.image);
+                updateSpectrogramTexture(gl,spectObj);
+              })
+              .catch((encodingError) => { console.log(encodingError); })
+            } else {
+              spectObj.image.onload = function()
+              {
+                updateSpectrogramTexture(spectrogram_gl, spectObj); };
+                let delay = Date.now() - spectObj.requestTime;
+                console.log("Reloaded texture " + spectObj.buildIndex.toString() +
+                            " to frame ID: " + spectObj.frameID +
+                            " with image file " + spectObj.image.src +
+                            " " + delay.toString() + " ms after request");
+            }
+
+            spectImgRing.push(spectObj);
+          }
+
+        }
+
+
+        function updateSpectrogram(gl, lastFrameID, newFrameID, specDir, storyboard) {
+          const N = newFrameID - lastFrameID;
+          //const M = spectImgRingSize - N;
+
+          if (0 < N && N < spectImgRingSize - 1) {
+            for (let i=0; i<N; i++)
+              advanceOneSpectrogramFrame(gl, lastFrameID+i, specDir, storyboard);
+          } else if (N < 0 && Math.abs(N) < spectImgRingSize -1) {
+            for (let i=0; i<Math.abs(N); i++)
+              retreatOneSpectrogramFrame(gl, lastFrameID-i, specDir, storyboard);
+          } else if (N != 0) {
+            reloadSpectrogramFrames(gl, newFrameID, specDir, storyboard);
+          } else {
+            // N == 0
+          }
+        }
+
+
+        /*
+        function updateSpectrogramTextures(gl, prevTexture, currTexture, nextTexture, lastFrameID, newFrameID, storyboard, specDir) {
+
+
+          const N = newFrameID - lastFrameID;
+          const M = spectImgRingSize - N;
+
+          if (N > 0 && M > 0) {
+
+            for (let i=0; i<N; i++) {
+              let spectObj = spectImgRing.shift();
+              const requestTime = clock.getTime();
+
+
+              spectObj.image.src = getSpectrogramImageSrc(newFrameID + M + i, specDir, storyboard);
+              spectObj.requestTime = requestTime;
+              img.decode()
+              .then(() => {
+                spectrogramCanvas.appendChild(spectObj.image);
+                updateSpectrogramTexture(spectrogram_gl, spectObj);
+              })
+              .catch((encodingError) => { console.log(encodingError); })
+
+              spectImgRing.push(spectObj);
+            }
+
+          } else if (N < 0) { // spectrogram frame is off the scale -- reload all
+
+            for (let i=0; i<spectImgRingSize; i++) {
+              let spectObj = spectImgRing.shift();
+              const requestTime = clock.getTime();
+
+              spectObj.image.src = getSpectrogramImageSrc(newFrameID + i, specDir, storyboard);
+              spectObj.requestTime = requestTime;
+              img.decode()
+              .then(() => {
+                spectrogramCanvas.appendChild(spectObj.image);
+                updateSpectrogramTexture(spectrogram_gl, spectObj);
+              })
+              .catch((encodingError) => { console.log(encodingError); })
+
+              spectImgRing.push(spectObj);
+
+
+            }
+         }
+
+        }
+        */
+
+        function spectrogramFrameIDContainingTime(t, storyboard) {
           if (t < storyboard.start[0])
             return(-1);
 
@@ -1019,30 +1212,24 @@ HTMLWidgets.widget({
             return(storyboard.ID.length);
 
           var idx = 0;
-          while(t > storyboard.end[idx])
+          while(idx < storyboard.end.length && t >= storyboard.end[idx])
             idx++;
 
-          return(idx);
+          return idx+1;
         };
 
 
-        function fractionThroughSpectrogramFrame(t, idx, storyboard) {
-          //idx = spectrogramFrameContainingTime(t, storyboard);
+        function fractionThroughSpectrogramFrame(t, id, storyboard) {
 
-          if (idx < 0)
+          if (id <= 0)
             return(0.0);
 
-          if (idx >= storyboard.ID.length)
+          if (id > storyboard.ID.length)
             return(1.0);
 
-          const frameDur = storyboard.end[idx] - storyboard.start[idx];
-          return ((t - storyboard.start[idx]) / frameDur);
+          const frameDur = storyboard.end[id-1] - storyboard.start[id-1];
+          return ((t - storyboard.start[id-1]) / frameDur);
         };
-
-        //function spectrogramFramePlayheadNDC(t, idx, storyboard) {
-        //  frac = fractionThroughSpectrogramFrame(t, idx, storyboard);
-        //  return(2.0*(frac-0.5));
-        //};
 
 
         function fractionThroughMediaFile(t, dur) {
@@ -1051,6 +1238,47 @@ HTMLWidgets.widget({
           else
             return(t/dur)
         };
+
+
+        function NDCSpectCurrFrameLeftEdge(t, storyboard)
+        {
+          let currId = spectrogramFrameIDContainingTime(t);
+          let fracThrough = fractionThroughSpectrogramFrame(t, currId, storyboard);
+
+          // Size of the entire frame is 2.0 * spectHorizontalScale
+          // When zero percent of the way through, then the NDC of the left edge
+          // of the frame is spectPlayheadPosition.
+          // When 99.999*% of the way through, the NDC of the right edge is spectPlayheadPosition,
+          // and so the NDC of the left edge is spectPlayheadPosition - 2.0 * spectHorizontalScale
+          // When 50% of the way through, the NDC of the right edge is
+          //     spectPlayheadPosition + 1.0 * spectHorizontalScale
+          // and the NDC of the left edge is
+          //     spectPlayheadPosition - 1.0 * spectHorizontalScale
+
+          return spectPlayheadPosition - 2.0 * fracThrough * spectHorizontalScale;
+        }
+
+
+        function NDCSpectCurrFrameRightEdge(t, storyboard)
+        {
+          return NDCSpectCurrFrameLeftEdge(t, storyboard) + 2.0 * spectHorizontalScale;
+        }
+
+
+        function NDCSpectFrameIDLeftEdge(t, id, storyboard)
+        {
+          let currId = spectrogramFrameIDContainingTime(t);
+          let fracThrough = fractionThroughSpectrogramFrame(t, currId, storyboard);
+          let N = currId - id;
+          return spectPlayheadPosition - 2.0 * (fracThrough + N) * spectHorizontalScale;
+        }
+
+
+        function NDCSpectFrameIDRightEdge(t, id, storyboard)
+        {
+          return NDCSpectFrameIDLeftEdge(t, storyboard) + 2.0 * spectHorizontalScale;
+        }
+
 
         //function mediaPlayheadNDC(t, dur) {
         //  frac = fractionThroughMediaFile(t, dur);
@@ -1335,16 +1563,6 @@ HTMLWidgets.widget({
         };
 
 
-      	const media_buffers = initMediaCanvasBuffers(media_gl);
-        const media_currFrameTexture = initTexture(media_gl);
-      	const media_prevFrameTexture = initTexture(media_gl);
-      	zeroTexture(media_gl, media_prevFrameTexture);
-
-        const spectrogram_buffers = initSpectrogramCanvasBuffers(spectrogram_gl);
-        const spectrogram_currFrameTexture = initTexture(spectrogram_gl);
-      	const spectrogram_prevFrameTexture = initTexture(spectrogram_gl);
-      	const spectrogram_nextFrameTexture = initTexture(spectrogram_gl);
-
       	toggleSubtractPrevFrame = function() {
       		if (subtractPrevFrame) {
       			zeroTexture(media_gl, media_prevFrameTexture);
@@ -1372,20 +1590,19 @@ HTMLWidgets.widget({
       		else { noizeOverlay = true; }
 
           // Figure out which spectrogram frames are needed
-          var spfid = spectrogramFrameContainingTime(media.currentTime, x.storyboard);
+          var spfid = spectrogramFrameIDContainingTime(media.currentTime, x.storyboard);
           if (spfid != currSpectrogramFrameID) {
+            updateSpectrogram(spectrogram_gl, currSpectrogramFrameID, spfid, x.spectrogramDir, x.storyboard);
             currSpectrogramFrameID = spfid
-            updateSpectrogramTextures(spectrogram_gl,
-                                      spectrogram_prevFrameTexture,
-                                      spectrogram_currFrameTexture,
-                                      spectrogram_nextFrameTexture,
-                                      spfid,
-                                      x.storyboard,
-                                      x.spectrogramDir);
           }
+          spectrogram_prevFrameTexture = spectImgRing.get(0).texture;
+          spectrogram_currFrameTexture = spectImgRing.get(1).texture;
+          spectrogram_nextFrameTexture = spectImgRing.get(2).texture;
 
           mediaPlayhead =  fractionThroughMediaFile(media.currentTime, media.duration);
-          spectTrans = -2.0 * (fractionThroughSpectrogramFrame(media.currentTime, spfid, x.storyboard) - 0.5);
+          //spectPlayheadPosition = 2.0 * mediaPlayhead - 1.0;
+          spectPlayheadPosition = 0.0;
+          spectTrans = -2.0 * (fractionThroughSpectrogramFrame(media.currentTime, spfid, x.storyboard)) + spectPlayheadPosition;
           //spectTrans = 2.0 * (mediaPlayhead - 0.5) - 2.0 * (fractionThroughSpectrogramFrame(media.currentTime, spfid, x.storyboard) - 0.5);
 
       		// draw the scene
