@@ -955,7 +955,7 @@ HTMLWidgets.widget({
 
 
         // The spectrogram images
-        setupSpectrogram(spectrogram_gl, x.spectrogramDir, x.spectrogramBaseName, x.storyboard);
+        setupSpectrogram(spectrogram_gl, x.spectrogramURL, x.spectrogramBaseName, x.storyboard);
 
         function getSpectrogramImageSrc(id, specDir, storyboard) {
           const blankFrameFile = x.spectrogramBaseName + "_blank.gif"
@@ -1592,7 +1592,7 @@ HTMLWidgets.widget({
           // Figure out which spectrogram frames are needed
           var spfid = spectrogramFrameIDContainingTime(media.currentTime, x.storyboard);
           if (spfid != currSpectrogramFrameID) {
-            updateSpectrogram(spectrogram_gl, currSpectrogramFrameID, spfid, x.spectrogramDir, x.storyboard);
+            updateSpectrogram(spectrogram_gl, currSpectrogramFrameID, spfid, x.spectrogramURL, x.storyboard);
             currSpectrogramFrameID = spfid
           }
           spectrogram_prevFrameTexture = spectImgRing.get(0).texture;
