@@ -1590,11 +1590,14 @@ HTMLWidgets.widget({
       		else { noizeOverlay = true; }
 
           // Figure out which spectrogram frames are needed
-          var spfid = spectrogramFrameIDContainingTime(media.currentTime, x.storyboard);
-          if (spfid != currSpectrogramFrameID) {
-            updateSpectrogram(spectrogram_gl, currSpectrogramFrameID, spfid, x.spectrogramURL, x.storyboard);
-            currSpectrogramFrameID = spfid
+          if (!media.paused) {
+            var spfid = spectrogramFrameIDContainingTime(media.currentTime, x.storyboard);
+            if (spfid != currSpectrogramFrameID) {
+              updateSpectrogram(spectrogram_gl, currSpectrogramFrameID, spfid, x.spectrogramURL, x.storyboard);
+              currSpectrogramFrameID = spfid
+            }
           }
+
           spectrogram_prevFrameTexture = spectImgRing.get(0).texture;
           spectrogram_currFrameTexture = spectImgRing.get(1).texture;
           spectrogram_nextFrameTexture = spectImgRing.get(2).texture;
