@@ -139,7 +139,7 @@ HTMLWidgets.widget({
     var currSpectrogramFrameID = 1;
     var spectTrans = 0.0;
     var mediaPlayhead = 0.0;
-    //var media.currentTime = 0.0;
+    var mediaPausedAtTime = 0.0;
     var spectGain = 1.0;
     var spectContrast = 1.0;
     var spectGamma = 1.0;
@@ -878,6 +878,7 @@ HTMLWidgets.widget({
       			frameByFrame = false;
       			media.play();
       		} else {
+      			mediaPausedAtTime = media.currentTime;
       			media.pause();
       		}
       	};
@@ -1592,22 +1593,21 @@ HTMLWidgets.widget({
       		else { noizeOverlay = true; }
 
           // Figure out which spectrogram frames are needed
-          if (!media.paused) {
-            var spfid = spectrogramFrameIDContainingTime(media.currentTime, x.storyboard);
-            if (spfid != currSpectrogramFrameID) {
-              updateSpectrogram(spectrogram_gl, currSpectrogramFrameID, spfid, x.spectrogramURL, x.storyboard);
-              currSpectrogramFrameID = spfid
-            }
+          var displayTime = media.paused ? mediaPausedAtTime : media.currentTime;
+          var spfid = spectrogramFrameIDContainingTime(displayTime, x.storyboard);
+          if (spfid != currSpectrogramFrameID) {
+            updateSpectrogram(spectrogram_gl, currSpectrogramFrameID, spfid, x.spectrogramURL, x.storyboard);
+            currSpectrogramFrameID = spfid
           }
 
           spectrogram_prevFrameTexture = spectImgRing.get(0).texture;
           spectrogram_currFrameTexture = spectImgRing.get(1).texture;
           spectrogram_nextFrameTexture = spectImgRing.get(2).texture;
 
-          mediaPlayhead =  fractionThroughMediaFile(media.currentTime, media.duration);
+          mediaPlayhead =  fractionThroughMediaFile(displayTime, media.duration);
           //spectPlayheadPosition = 2.0 * mediaPlayhead - 1.0;
           spectPlayheadPosition = 0.0;
-          spectTrans = -2.0 * (fractionThroughSpectrogramFrame(media.currentTime, spfid, x.storyboard)) + spectPlayheadPosition;
+          spectTrans = -2.0 * (fractionThroughSpectrogramFrame(displayTime, spfid, x.storyboard)) + spectPlayheadPosition;
           //spectTrans = 2.0 * (mediaPlayhead - 0.5) - 2.0 * (fractionThroughSpectrogramFrame(media.currentTime, spfid, x.storyboard) - 0.5);
 
       		// draw the scene
@@ -1616,7 +1616,7 @@ HTMLWidgets.widget({
                                 spectrogram_prevFrameTexture, spectrogram_currFrameTexture, spectrogram_nextFrameTexture,
                                 deltaTime,  mediaPlayhead,
                                 spectGain, spectContrast, spectGamma, spectVerticalScale);
-          drawScrubberCanvas( scrubberCanvas, scrubberContext, mediaMarkers, media.currentTime, media.duration,
+          drawScrubberCanvas( scrubberCanvas, scrubberContext, mediaMarkers, displayTime, media.duration,
                         hoveringOverScrubber, hoverPoint, (!copyMedia) || media.seeking, media.muted);
 
           if (capture) {
