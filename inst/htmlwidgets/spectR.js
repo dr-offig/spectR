@@ -139,7 +139,7 @@ HTMLWidgets.widget({
     var currSpectrogramFrameID = 1;
     var spectTrans = 0.0;
     var mediaPlayhead = 0.0;
-    var mediaLastReportedTime = 0.0;
+    //var media.currentTime = 0.0;
     var spectGain = 1.0;
     var spectContrast = 1.0;
     var spectGamma = 1.0;
@@ -896,8 +896,8 @@ HTMLWidgets.widget({
         gotoNextMarker = function() {
           if (mediaMarkers !== null) {
             times = mediaMarkers.timeA;
-            candInd = times.indexOfClosestTo(mediaLastReportedTime);
-            if (0 <= candInd && candInd < times.length && mediaLastReportedTime < times[[candInd]]) {
+            candInd = times.indexOfClosestTo(media.currentTime);
+            if (0 <= candInd && candInd < times.length && media.currentTime < times[[candInd]]) {
               media.currentTime = times[[candInd]];
             } else if (0 <= candInd && candInd < (times.length - 1)) {
               media.currentTime = times[[candInd+1]];
@@ -908,8 +908,8 @@ HTMLWidgets.widget({
         gotoPreviousMarker = function() {
           if (mediaMarkers !== null) {
             times = mediaMarkers.timeA;
-            candInd = times.indexOfClosestTo(mediaLastReportedTime);
-            if (mediaLastReportedTime> times[[candInd]]) {
+            candInd = times.indexOfClosestTo(media.currentTime);
+            if (media.currentTime> times[[candInd]]) {
               media.currentTime = times[[candInd]];
             } else if (candInd > 0) {
               media.currentTime = times[[candInd-1]];
@@ -940,7 +940,7 @@ HTMLWidgets.widget({
       	  media.addEventListener('timeupdate', function() {
       	     timeupdate = true;
       	     //timeSlider.value = video.currentTime / video.duration;
-      	     mediaLastReportedTime = media.currentTime;
+      	     //media.currentTime = media.currentTime;
       	     checkReady();
       	  }, true);
 
@@ -1331,17 +1331,17 @@ HTMLWidgets.widget({
       		  evt.preventDefault();
       		  if (definingRegion) {
       		    const ind = mediaMarkers.timeA.indexOfClosestTo(definingRegionStartTime);
-      		    mediaMarkers.timeB[ind] = mediaLastReportedTime;
+      		    mediaMarkers.timeB[ind] = media.currentTime;
       		    definingRegion = false;
       		    definingRegionStartTime = null;
       		  } else {
       		    const shiftPressed = evt.getModifierState("Shift");
       		    if (shiftPressed) {
-      		      mediaMarkers = addMarker(mediaMarkers, mediaLastReportedTime, null, "REGION", defaultColour, defaultComment);
+      		      mediaMarkers = addMarker(mediaMarkers, media.currentTime, null, "REGION", defaultColour, defaultComment);
                 definingRegion = true;
-                definingRegionStartTime = mediaLastReportedTime;
+                definingRegionStartTime = media.currentTime;
       		    } else {
-      		      mediaMarkers = addMarker(mediaMarkers, mediaLastReportedTime, mediaLastReportedTime, "POINT", defaultColour, defaultComment);
+      		      mediaMarkers = addMarker(mediaMarkers, media.currentTime, media.currentTime, "POINT", defaultColour, defaultComment);
       		    }
       		  }
 
@@ -1593,7 +1593,7 @@ HTMLWidgets.widget({
 
           // Figure out which spectrogram frames are needed
           if (!media.paused) {
-            var spfid = spectrogramFrameIDContainingTime(mediaLastReportedTime, x.storyboard);
+            var spfid = spectrogramFrameIDContainingTime(media.currentTime, x.storyboard);
             if (spfid != currSpectrogramFrameID) {
               updateSpectrogram(spectrogram_gl, currSpectrogramFrameID, spfid, x.spectrogramURL, x.storyboard);
               currSpectrogramFrameID = spfid
@@ -1604,10 +1604,10 @@ HTMLWidgets.widget({
           spectrogram_currFrameTexture = spectImgRing.get(1).texture;
           spectrogram_nextFrameTexture = spectImgRing.get(2).texture;
 
-          mediaPlayhead =  fractionThroughMediaFile(mediaLastReportedTime, media.duration);
+          mediaPlayhead =  fractionThroughMediaFile(media.currentTime, media.duration);
           //spectPlayheadPosition = 2.0 * mediaPlayhead - 1.0;
           spectPlayheadPosition = 0.0;
-          spectTrans = -2.0 * (fractionThroughSpectrogramFrame(mediaLastReportedTime, spfid, x.storyboard)) + spectPlayheadPosition;
+          spectTrans = -2.0 * (fractionThroughSpectrogramFrame(media.currentTime, spfid, x.storyboard)) + spectPlayheadPosition;
           //spectTrans = 2.0 * (mediaPlayhead - 0.5) - 2.0 * (fractionThroughSpectrogramFrame(media.currentTime, spfid, x.storyboard) - 0.5);
 
       		// draw the scene
@@ -1616,7 +1616,7 @@ HTMLWidgets.widget({
                                 spectrogram_prevFrameTexture, spectrogram_currFrameTexture, spectrogram_nextFrameTexture,
                                 deltaTime,  mediaPlayhead,
                                 spectGain, spectContrast, spectGamma, spectVerticalScale);
-          drawScrubberCanvas( scrubberCanvas, scrubberContext, mediaMarkers, mediaLastReportedTime, media.duration,
+          drawScrubberCanvas( scrubberCanvas, scrubberContext, mediaMarkers, media.currentTime, media.duration,
                         hoveringOverScrubber, hoverPoint, (!copyMedia) || media.seeking, media.muted);
 
           if (capture) {
@@ -1624,7 +1624,7 @@ HTMLWidgets.widget({
             //var data = canvas.toDataURL("image/png", 1);
             //document.getElementById('snapshot').setAttribute('src', data);
             spectrogramCanvas.toBlob(function(blob) {
-              saveAs(blob, extractMainIdentifier(x.mediaURL) + "_spectrogram_" + formatTime(mediaLastReportedTime) + ".png");
+              saveAs(blob, extractMainIdentifier(x.mediaURL) + "_spectrogram_" + formatTime(media.currentTime) + ".png");
             });
           }
 
