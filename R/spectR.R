@@ -5,16 +5,16 @@
 #' @import htmlwidgets
 #'
 #' @export
-spectR <- function(embeddingURL, embeddingMountPoint, mediaRelativePath, mediaName, mediaHasVideo,
+spectR <- function(mediaServerURL, mediaServerRootDir, mediaRelativePath, mediaName, mediaHasVideo,
                    spectRelativeDir, spectrogramBaseName, spectrogramHeight,
                    mediaMarkers=NULL, width = NULL, height = NULL, elementId = NULL)
 {
 
   # full paths depend on the embedding
-  mediaURL <- paste(sep="/", embeddingURL, mediaRelativePath)
-  mediaPath <- paste(sep="/", embeddingMountPoint, mediaRelativePath)
-  spectrogramURL <- paste(sep="/", embeddingURL, spectRelativeDir)
-  spectrogramDir <- paste(sep="/", embeddingMountPoint, spectRelativeDir)
+  mediaURL <- paste(sep="/", mediaServerURL, mediaRelativePath)
+  mediaPath <- paste(sep="/", mediaServerRootDir, mediaRelativePath)
+  spectrogramURL <- paste(sep="/", mediaServerURL, spectRelativeDir)
+  spectrogramDir <- paste(sep="/", mediaServerRootDir, spectRelativeDir)
 
   # check if spectrogram exists, else create it
   if (!dir.exists(spectrogramDir))
@@ -33,8 +33,8 @@ spectR <- function(embeddingURL, embeddingMountPoint, mediaRelativePath, mediaNa
 
   # forward options using x
   x = list(
-    embeddingURL = embeddingURL,
-    embeddingMountPoint = embeddingMountPoint,
+    mediaServerURL = mediaServerURL,
+    mediaServerRootDir = mediaServerRootDir,
     mediaURL = mediaURL,
     mediaPath = mediaPath,
     mediaName = mediaName,
