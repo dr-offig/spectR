@@ -961,7 +961,7 @@ HTMLWidgets.widget({
         setupSpectrogram(spectrogram_gl, x.spectrogramURL, x.spectrogramBaseName, x.storyboard);
 
         function getSpectrogramImageSrc(id, specDir, storyboard) {
-          const blankFrameFile = x.spectrogramBaseName + "_blank.gif"
+          const blankFrameFile = x.spectrogramBaseName + "_blank.png"
           if (1 <= id && id <= storyboard.image.length) return specDir + "/" + storyboard.image[id-1];
           else return specDir + "/" + blankFrameFile;
         }
